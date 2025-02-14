@@ -1,0 +1,56 @@
+---
+- name: "create users on hosts"
+  hosts: test-host 
+  gather_facts: no
+  # check_mode: true
+  vars:
+    users:
+    - username: otusadm
+      shell: /bin/bash
+      groups: admin
+
+    - username: otus
+      shell: /bin/bash
+
+  vars_prompt:
+    - name: password
+      prompt: What is your password?
+      private: true
+      encrypt: sha512_crypt
+      confirm: true
+      salt_size: 7
+
+  tasks:
+    - name: Add group | create primary group before adding user to group
+      ansible.builtin.group:
+        name: "{{ item.username }}"
+        state: present
+      loop: '{{ users }}'
+    
+    - name: Add group | create groups if dosnot exist
+      ansible.builtin.group:
+        name: "{{ item.groups }}"
+        state: present
+      loop: '{{ users }}'
+      when: 'item.groups is defined'
+      
+    - name: Add the user '{{ username }}' 
+      ansible.builtin.user:
+        name: "{{ item.username }}"
+        password: "{{ password }}"
+        shell: /bin/bash
+        group: "{{ item.username }}"
+        groups: "{{ item.groups | default (item.username)}}"
+      with_items: "{{ users }}"
+    
+    - name: copy authentification script to remote VM 
+      ansible.builtin.template:
+        src: login.sh
+        dest:  /usr/local/bin/login.sh
+        mode: 0700
+    
+    - name: add script to pam
+      ansible.builtin.lineinfile:
+        path: /etc/pam.d/sshd 
+        line: auth required pam_exec.so debug /usr/local/bin/login.sh
+        state: present
